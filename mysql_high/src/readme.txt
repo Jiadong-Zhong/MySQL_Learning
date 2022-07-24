@@ -1398,3 +1398,91 @@ select @@default_storage_engine
         采用中间件的优势就是性能强大，使用简单，但是会有些性能损耗
 
     主从切换(自己了解)
+
+第19章 数据库备份与恢复
+    为了防止数据丢失并将损失降到最低，应定期对MySQL数据库服务器做备份。如果数据库中的数据丢失或者出现错误，可以使用备份的数据进行恢复。
+
+    物理备份和逻辑备份
+        物理备份：转储数据库物理文件到某一目录，恢复速度快，但是占用空间大。
+        逻辑备份：对数据库对象导出，汇总入备份文件内。恢复速度慢，但占用空间小。实际上就是备份sql语句
+
+    mysqldump实现逻辑备份
+        备份一个数据库
+            mysqldump -u 用户名 -h 主机名 -p密码 待备份的数据库名称[table name,[table name,]]> 备份文件名.sql
+        备份全部数据库
+            mysqldump -u 用户名 -p密码 --all-databases > all_database.sql
+            mysqldump -u 用户名 -p密码 -A > all_database.sql
+        备份部分数据库
+            使用 -B 或者 --databases 数据库名1 数据库名2
+        备份单表的部分数据
+            --where="过滤条件"
+        排除某些表的备份
+            --ignore-table=库名.表名
+        只备份结构或者只备份数据
+            只备份结构：--no-data或-d
+            只备份数据：--no-create-info或-t
+        备份中包含存储过程、函数、事件
+            备份存储过程及函数--routines或-R
+            备份事件--events或-E
+
+    mysql命令恢复数据
+        mysql命令恢复备份的数据
+        mysql -u 用户名 -p 密码 [database name] < 备份文件名.sql
+
+    物理备份：直接复制整个数据库
+        对MyISAM类型的表适用，InnoDB的不适用
+        为了保证一致性需要保证数据无法更改：
+            方式一：服务器停止
+            方式二：FLUSH TABLES WITH READ LOCK，可以读不可以修改，同时确保所有数据都写入硬盘
+
+    物理恢复：直接复制到数据库目录
+        拷贝后重启MySQL服务器，还需要使用chown操作来赋予访问权限
+        chown -R mysql.mysql 数据库文件路径
+
+    表的导入导出
+        表的导出
+            SELECT ... INTO OUTFILE;
+            mysqldump -u 用户名 -p密码 -T "路径" 数据库名 表名
+            mysql -u 用户名 -p密码 --execute="sql语句" 数据库名 > "目标文件路径"
+                加入命令--xml就可以生成xml文件
+        表的导入
+            LOAD DATA INFILE '文件路径' INTO TABLE 数据库名.表名
+            mysqlimport -u 用户名 -p 密码 数据库名 '文件路径'
+
+    数据库迁移
+        数据迁移是指选择、准备、提取和转换数据，并将数据从一个计算机存储系统永久地传输到另一个计算机存储系统的过程。验证迁移数据的完整性和退役原来旧的数据存储也是迁移过程的一部分。
+
+        迁移方案
+            物理逻辑、逻辑迁移
+        迁移注意点
+            相同版本的数据库之间的迁移
+                物理迁移只适用于MyISAM的表
+                最常见最安全的是使用mysqldump命令导出，mysql命令导入
+            不同版本的数据库之间迁移注意点
+                考虑到笨笨之间的差异，例如字符集不同
+            不同数据库之间迁移注意点
+                需要了解不同数据库的架构，比较差异。
+                MySQL官方提供的工具MySQL Migration Toolkit可以在不同数据库之间进行数据迁移。MyODBC实现了MySQL和SQL Server之间的迁移
+
+    删库了不敢跑，能干啥？
+        delete：误删
+            措施1：数据恢复
+                使用Flashback工具恢复数据
+                实际上是修改binlog内容，拿回原库重放
+                使用前提：binlog_format=row binlog_row_image=FULL
+            错误2：预防
+                必须SQL审查
+                打开安全模式，把sql_safe_updates设置为on
+
+        truncate/drop：误删库/表
+            需要使用全量备份和增量日志结合的方式
+            前提是有定期的全量备份并且实时备份binlog
+
+        预防使用truncate/drop误删
+            1.权限分离
+            2.指定操作规范，比如删除之前，先改名，观察一段时间后确保业务无影响再删
+            3.设置延迟复制备库
+                让从库落后主库更新，出现误操作后在限定时间内到备库stop slave，通过CHANGE MASTER TO MASTER_DELAY=N可以指定有N秒延迟
+
+        rm：误删MySQL实例
+            对于有高可用机制的mysql集群，不用担心rm删除数据。
